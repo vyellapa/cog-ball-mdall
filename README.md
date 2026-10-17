@@ -46,10 +46,14 @@ How the pipeline works, what each output file contains, and how it was validated
 * Internet access once, to download the genome (0.9 GB) when building the reference
 * Route A only: Nextflow ≥ 24.10 with Java 17+ (tested with 25.10.8)
 
-You receive two folders from COG:
+What you need from COG:
 
-* `cog-ball-mdall/` — this repository (code and settings)
-* `cog-ball-images-<version>/` — the three container images and their `SHA256SUMS`
+* this repository: `git clone https://github.com/vyellapa/cog-ball-mdall.git`
+  (private: ask Venkata Yellapantula to add your GitHub account)
+* the three container images, public on Docker Hub:
+  `vyellapa/cog-ball-counts`, `vyellapa/cog-ball-mdall`, `vyellapa/cog-ball-web` (tag `0.1.0`;
+  amd64, and arm64 for mdall and web). Offline servers can use the `cog-ball-images-<version>/`
+  archives instead (step 2.2).
 
 ---
 
@@ -57,25 +61,35 @@ You receive two folders from COG:
 
 Replace `/data/cog-ball` with a folder on your server.
 
-**2.1 Copy the files to the server** (from your workstation):
+**2.1 Get the code** (on the server):
 
 ```bash
-rsync -av --exclude web/node_modules --exclude test/data \
-      cog-ball-mdall cog-ball-images-0.1.0  you@server:/data/cog-ball/
+cd /data/cog-ball
+git clone https://github.com/vyellapa/cog-ball-mdall.git
+cd cog-ball-mdall && git checkout v0.1.0     # the release every center runs
 ```
 
-**2.2 Convert the images to Singularity/Apptainer format** (on the server, a few minutes):
+**2.2 Get the images in Singularity/Apptainer format** (on the server, a few minutes):
 
 ```bash
-cd /data/cog-ball/cog-ball-mdall
 module load apptainer 2>/dev/null || module load singularity 2>/dev/null || true
 export APPTAINER_TMPDIR=/data/cog-ball/tmp SINGULARITY_TMPDIR=/data/cog-ball/tmp   # needs ~10 GB
 mkdir -p $APPTAINER_TMPDIR
-containers/make_sif.sh ../cog-ball-images-0.1.0 /data/cog-ball/sif
+containers/make_sif.sh --pull /data/cog-ball/sif
 ```
 
-The script verifies the archives' checksums and writes
-`cog-ball-{counts,mdall,web}_0.1.0.sif`.
+This pulls `docker://vyellapa/cog-ball-{counts,mdall,web}:0.1.0` and writes
+`cog-ball-{counts,mdall,web}_0.1.0.sif`. Servers without internet: copy the
+`cog-ball-images-0.1.0/` archives over and run
+`containers/make_sif.sh ../cog-ball-images-0.1.0 /data/cog-ball/sif` (checks their SHA256SUMS).
+
+Docker users (local testing) pull and give the images the names the pipelines expect:
+
+```bash
+for n in counts mdall web; do
+  docker pull vyellapa/cog-ball-$n:0.1.0 && docker tag vyellapa/cog-ball-$n:0.1.0 cog-ball/$n:0.1.0
+done
+```
 
 **2.3 Fill in your site settings** — once per site, so the center and paths never have
 to be typed again:

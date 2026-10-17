@@ -195,9 +195,24 @@ PLATFORM=linux/amd64 containers/build_images.sh        # cog-ball/{counts,mdall,
 containers/export_images.sh /tmp/cog-ball-images       # tarballs + SHA256SUMS, tagged cog-ball/<name>:<VERSION>
 ```
 
-On a server: `containers/make_sif.sh <archives> <sif dir>` (Singularity/Apptainer) or
-`docker load -i` each archive (Docker). With a registry: `REGISTRY=ghcr.io/<org> PUSH=1`
-when building, then `--registry` (Nextflow/bash) or `make_sif.sh --pull`.
+Releases are published on Docker Hub as `vyellapa/cog-ball-<name>:<VERSION>`, one tag per
+image that serves amd64 (all three) and arm64 (mdall, web; RNA-SeQC is linux-64 only, so
+counts is amd64-only). After building both architectures (the native Mac build is arm64):
+
+```bash
+V=$(cat VERSION)
+for n in counts mdall web; do
+  docker tag cog-ball-amd64/$n:$V vyellapa/cog-ball-$n:$V-amd64 && docker push vyellapa/cog-ball-$n:$V-amd64
+  # mdall, web: also tag + push the arm64 build as :$V-arm64, and list it below
+  docker buildx imagetools create -t vyellapa/cog-ball-$n:$V vyellapa/cog-ball-$n:$V-amd64 [vyellapa/cog-ball-$n:$V-arm64]
+done
+git tag v$V && git push origin v$V
+```
+
+On a server: `containers/make_sif.sh --pull <sif dir>` (from Docker Hub), or
+`containers/make_sif.sh <archives> <sif dir>` offline; Docker users `docker pull` and tag
+as `cog-ball/<name>:<VERSION>` (README step 2.2). A different registry:
+`IMAGE_PREFIX=ghcr.io/<org>/cog-ball- containers/make_sif.sh --pull ...`.
 
 On networks that inspect TLS (e.g. Cisco Umbrella), pass the proxy's root certificate
 when building: `EXTRA_CA_CERT=/path/root.pem containers/build_images.sh`. It is used only

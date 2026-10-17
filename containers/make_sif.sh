@@ -4,8 +4,9 @@
 #
 # From tarballs made by export_images.sh (no registry needed):
 #   containers/make_sif.sh /path/to/tarballs /shared/cog-ball/sif
-# From a registry:
-#   REGISTRY=ghcr.io/<org> containers/make_sif.sh --pull /shared/cog-ball/sif
+# From Docker Hub (docker.io/vyellapa/cog-ball-{counts,mdall,web}:<VERSION>):
+#   containers/make_sif.sh --pull /shared/cog-ball/sif
+# (another registry: IMAGE_PREFIX=ghcr.io/<org>/cog-ball- containers/make_sif.sh --pull ...)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=$(cat VERSION)
@@ -13,7 +14,7 @@ SING=$(command -v apptainer || command -v singularity) || { echo "Need apptainer
 if [[ ${1:-} == --pull ]]; then
   out=${2:?sif output directory}; mkdir -p "$out"
   for name in ${ONLY:-counts mdall web}; do
-    "$SING" pull "$out/cog-ball-${name}_${VERSION}.sif" "docker://${REGISTRY:?set REGISTRY}/$name:$VERSION"
+    "$SING" pull "$out/cog-ball-${name}_${VERSION}.sif" "docker://${IMAGE_PREFIX:-docker.io/vyellapa/cog-ball-}$name:$VERSION"
   done
 else
   src=${1:?directory with cog-ball-*.docker.tar}; out=${2:?sif output directory}; mkdir -p "$out"
