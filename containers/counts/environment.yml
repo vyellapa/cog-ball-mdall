@@ -1,0 +1,19 @@
+# Tool versions for the counts image (cog-ball/counts). Change a version here and
+# you change the counts every center produces: bump VERSION and rebuild the image.
+name: base
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - star=2.7.11b
+  - samtools=1.21
+  - htseq=2.0.9
+  - rna-seqc=2.4.2   # QC metrics; linux-64 only, so this image is built for linux/amd64
+  - bx-python<0.13  # collapse_annotation.py; newer builds need numpy>=2, HTSeq 2.0.9 needs numpy<2
+  - pandas
+  - numpy
+  - perl=5.32
+  - python=3.11
+  - pigz=2.8
+  - coreutils
+  - procps-ng   # ps, needed by Nextflow for task metrics

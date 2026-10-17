@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>UMAP Projection | B-ALL MD-ALL Classifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+<script src="/vendor/plotly.min.js"></script>
+<script src="/common.js"></script>
+</head>
+<body>
+<main class="page-shell">
+  <div class="topbar">
+    <div class="topbar-copy">
+      <span class="topbar-title"><a href="/">B-ALL MD-ALL Classifier</a></span>
+      <span class="topbar-subtitle">COG working group</span>
+    </div>
+    <a class="btn btn-outline" id="back-link" href="/">← Back</a>
+  </div>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">UMAP Projection</div>
+      <p class="hero-sub" id="hero-sub">Samples projected onto the fixed MD-ALL reference embedding (1,821 reference samples, MD-ALL key genes).</p>
+      <span class="run-meta" id="meta-sample">—</span>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-outline" id="gene-link" href="#" style="display:none">Open Gene Search ↗</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-header">
+      <span class="card-title">MD-ALL Reference UMAP</span>
+      <div class="controls">
+        <select id="f-center" aria-label="Center"><option value="">All centers</option></select>
+        <label class="check"><input type="checkbox" id="show-cog"> Show all COG samples</label>
+      </div>
+    </div>
+    <div id="status" class="status">Initialising embedding…</div>
+    <div class="analysis-grid">
+      <div id="umap-chart" class="plot"></div>
+      <aside class="results-panel">
+        <div class="results-header" id="panel-title">MD-ALL Call</div>
+        <div id="panel" class="empty">Waiting for results…</div>
+      </aside>
+    </div>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let REF = null, SAMPLES = [], sel = null;   // sel = summary record of the highlighted sample
+const keyOf = s => `${s.center}/${s.sample}`;
+
+// Hover text for a COG sample: name, MD-ALL call, PhenoGraph and SVM calls with scores.
+function hoverText(s) {
+  const agree = { concordant: 'concordant', discordant: 'needs review', unclassified: 'unclassified' }[s.agreement] || 'not classified';
+  return `<b>${esc(s.sample)}</b> · ${esc(s.center)}<br>` +
+    `MD-ALL call: <b>${esc(s.gep_call || '—')}</b> (${agree})<br>` +
+    `PhenoGraph: ${esc(s.phenograph?.call ?? '—')} · ${scoreText(s.phenograph)}<br>` +
+    `SVM: ${esc(s.svm?.call ?? '—')} · ${scoreText(s.svm)}`;
+}
+
+function renderHeader() {
+  if (sel) {
+    const p = sampleParams(sel.center, sel.sample);
+    $('meta-sample').textContent = `Sample: ${sel.sample} · ${sel.center}`;
+    $('back-link').href = `/sample.html?${p}`; $('back-link').textContent = '← Back to Sample';
+    $('gene-link').href = `/gene-search.html?${p}`; $('gene-link').style.display = '';
+    $('panel-title').textContent = 'MD-ALL Call';
+    document.title = `${sel.sample} UMAP | B-ALL MD-ALL Classifier`;
+  } else {
+    $('meta-sample').textContent = 'All COG samples';
+    $('back-link').href = '/'; $('back-link').textContent = '← All Samples';
+    $('gene-link').style.display = 'none';
+    $('panel-title').textContent = 'Samples by Center';
+  }
+}
+
+function renderPanel() {
+  if (sel) {
+    const s = sel;
+    const rows = [
+      ['Sample ID', `<a href="/sample.html?${sampleParams(s.center, s.sample)}">${esc(s.sample)}</a>`], ['Center', esc(s.center)],
+      ['MD-ALL Call', s.gep_call ? `${swatch(s.gep_call)}${esc(s.gep_call)}` : '<span style="color:var(--amber)">Needs review</span>'],
+      ['Agreement', agreementPill(s.agreement)],
+      ['PhenoGraph', `${esc(s.phenograph?.call ?? '—')} · ${scoreText(s.phenograph)}`],
+      ['SVM', `${esc(s.svm?.call ?? '—')} · ${scoreText(s.svm)}`],
+    ];
+    $('panel').className = '';
+    $('panel').innerHTML = `<table class="results-table"><tbody>${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>`;
+  } else {
+    const centers = [...new Set(SAMPLES.map(s => s.center))].sort();
+    $('panel').className = '';
+    $('panel').innerHTML = `<table class="results-table"><tbody>${centers.map(c => {
+      const rs = SAMPLES.filter(s => s.center === c);
+      const review = rs.filter(s => s.agreement === 'discordant').length;
+      return `<tr><th>${esc(c)}</th><td>${rs.filter(s => s.status === 'classified').length} classified · ${rs.filter(s => s.agreement === 'concordant').length} concordant${review ? ` · <span style="color:var(--amber)">${review} review</span>` : ''}</td></tr>`;
+    }).join('')}</tbody></table><p class="note" style="padding:0 16px 14px">Click a sample on the map to highlight it.</p>`;
+  }
+}
+
+function render() {
+  if (!REF) return;
+  const groups = {};
+  REF.samples.forEach(r => (groups[r.subtype] ||= []).push(r));
+  const traces = Object.keys(groups).sort().map(st => ({
+    x: groups[st].map(r => r.x), y: groups[st].map(r => r.y), mode: 'markers', type: 'scattergl', name: st,
+    text: groups[st].map(r => `${r.id}<br>${r.detail}`), hovertemplate: '%{text}<extra>reference</extra>',
+    marker: { size: 8, opacity: sel ? 0.4 : 0.62, color: colorOf(st), line: { color: 'rgba(13,17,23,0.35)', width: 0.4 } },
+  }));
+
+  // Other COG samples (optional overlay), clickable to change the highlight.
+  if ($('show-cog').checked) {
+    const c = $('f-center').value;
+    const rows = SAMPLES.filter(s => s.umap && s.umap.x !== null && (!c || s.center === c) && (!sel || keyOf(s) !== keyOf(sel)));
+    traces.push({
+      x: rows.map(s => s.umap.x), y: rows.map(s => s.umap.y), mode: 'markers', type: 'scatter', name: 'COG samples',
+      customdata: rows.map(keyOf), text: rows.map(hoverText), hovertemplate: '%{text}<extra></extra>',
+      marker: { size: 11, symbol: 'circle', color: rows.map(s => s.gep_call ? colorOf(s.gep_call) : '#c47d0e'),
+                line: { color: '#1a202c', width: 1.4 } },
+    });
+  }
+
+  // Highlighted sample: soft halo + teal ring + subtype-coloured core, drawn last (on top).
+  const annotations = [];
+  if (sel && sel.umap && sel.umap.x !== null) {
+    const x = [sel.umap.x], y = [sel.umap.y], core = sel.gep_call ? colorOf(sel.gep_call) : '#c47d0e';
+    traces.push(
+      { x, y, type: 'scatter', mode: 'markers', hoverinfo: 'skip', showlegend: false,
+        marker: { size: 46, color: 'rgba(14,126,110,0.13)', line: { width: 0 } } },
+      { x, y, type: 'scatter', mode: 'markers', hoverinfo: 'skip', showlegend: false,
+        marker: { size: 28, color: 'rgba(255,255,255,0.85)', line: { color: '#0e7e6e', width: 2.5 } } },
+      { x, y, type: 'scatter', mode: 'markers', name: `<b>${esc(sel.sample)}</b>`, customdata: [keyOf(sel)],
+        text: [hoverText(sel)], hovertemplate: '%{text}<extra></extra>',
+        hoverlabel: { bgcolor: '#ffffff', bordercolor: '#0e7e6e', font: { family: PLOT_FONT, color: '#1a202c', size: 14 } },
+        marker: { size: 15, color: core, line: { color: '#ffffff', width: 2.5 } } },
+    );
+    annotations.push({
+      x: sel.umap.x, y: sel.umap.y, text: `<b>${esc(sel.sample)}</b>`, showarrow: true, arrowhead: 0, arrowwidth: 1.2,
+      arrowcolor: '#0e7e6e', ax: 46, ay: -42, bgcolor: '#ffffff', bordercolor: '#0e7e6e', borderwidth: 1.2, borderpad: 5,
+      font: { family: PLOT_FONT, color: '#0e7e6e', size: 14 },
+    });
+  }
+
+  const narrow = window.innerWidth < 720;
+  Plotly.react('umap-chart', traces, plotLayout({
+    height: narrow ? 520 : 820, hovermode: 'closest', annotations,
+    xaxis: { ...plotLayout().xaxis, title: { text: 'UMAP 1', font: { color: '#0e7e6e' } } },
+    yaxis: { ...plotLayout().yaxis, title: { text: 'UMAP 2', font: { color: '#0e7e6e' } } },
+    legend: { font: { size: 13 }, itemsizing: 'constant', orientation: narrow ? 'h' : 'v' },
+    margin: { l: 60, r: 10, t: 20, b: 50 },
+  }), plotConfig);
+  const el = $('umap-chart');
+  el.removeAllListeners?.('plotly_click');
+  el.on('plotly_click', ev => {
+    const pt = ev.points.find(p => typeof p.customdata === 'string');
+    if (pt) select(pt.customdata);
+  });
+}
+
+function setStatusFor() {
+  if (sel && (!sel.umap || sel.umap.x === null)) setStatus(`${sel.sample} has no UMAP position (not classified yet).`, 'error');
+  else if (sel) setStatus(`Highlighting ${sel.sample} (${sel.center}). Hover for its calls; click another COG sample to switch.`, 'loaded');
+  else setStatus(`${SAMPLES.filter(s => s.umap && s.umap.x !== null).length} COG samples on the reference map. Click one to highlight it.`, 'loaded');
+}
+
+function select(key) {
+  const s = SAMPLES.find(r => keyOf(r) === key);
+  if (!s) return;
+  sel = s;
+  history.replaceState(null, '', `/umap.html?${sampleParams(s.center, s.sample)}`);
+  renderHeader(); renderPanel(); setStatusFor(); render();
+}
+
+(async () => {
+  try {
+    const [ref, summary] = await Promise.all([getJson('/api/reference/umap'), getJson('/api/summary')]);
+    REF = ref; SAMPLES = summary.samples;
+    setSubtypes(REF.subtypes);
+    [...new Set(SAMPLES.map(s => s.center))].sort().forEach(id => $('f-center').add(new Option(id, id)));
+    const c = qs.get('center'), s = qs.get('sample');
+    if (s) {
+      sel = SAMPLES.find(r => r.center === c && r.sample === s) || null;
+      if (!sel) setStatus(`Sample ${s} (${c}) was not found in the synced results.`, 'error');
+    } else {
+      $('show-cog').checked = true;   // cohort view: all COG samples
+    }
+    renderHeader(); renderPanel();
+    if (!s || sel) setStatusFor();
+    render();
+  } catch (err) {
+    setStatus(`Failed to load the embedding: ${err.message}`, 'error');
+  }
+})();
+$('show-cog').addEventListener('change', render);
+$('f-center').addEventListener('change', render);
+</script>
+</body>
+</html>

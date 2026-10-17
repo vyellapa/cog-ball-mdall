@@ -1,0 +1,35 @@
+# site-specific settings (copy site.conf.example)
+site.conf
+
+# raw sequencing and alignments: never commit
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bai
+*.cram
+*.crai
+*.sam
+*.bcl
+*.ora
+*.sra
+
+# references, images and run outputs (too large; references are on Zenodo)
+refs/
+*.sif
+*.docker.tar
+*.tar.gz
+work/
+results/
+.nextflow/
+.nextflow.log*
+.cog-ball-zenodo-*
+
+# node / OS
+node_modules/
+.DS_Store
+
+# python
+__pycache__/
+*.pyc

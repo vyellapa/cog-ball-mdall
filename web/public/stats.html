@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cohort Statistics | B-ALL MD-ALL Classifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+<script src="/vendor/plotly.min.js"></script>
+<script src="/common.js"></script>
+</head>
+<body>
+<main class="page-shell">
+  <div class="topbar">
+    <div class="topbar-copy">
+      <span class="topbar-title"><a href="/">B-ALL MD-ALL Classifier</a></span>
+      <span class="topbar-subtitle">COG working group</span>
+    </div>
+    <a class="btn btn-outline" href="/">← All Samples</a>
+  </div>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">Cohort Statistics</div>
+      <p class="hero-sub">Sample totals and MD-ALL subtype counts across all participating centers.</p>
+      <span class="run-meta" id="meta-version">—</span><span class="run-meta" id="meta-scan">—</span>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-outline" href="/umap.html">Open Cohort UMAP ↗</a>
+    </div>
+  </section>
+
+  <div class="tiles" id="tiles"></div>
+  <div class="status idle" id="status" style="border:0;padding-left:0">Loading results…</div>
+
+  <section class="card">
+    <div class="card-header"><span class="card-title">Samples by Center</span><span class="card-note">click a center to open its samples</span></div>
+    <div class="table-wrap"><table class="data" id="center-table"></table></div>
+  </section>
+
+  <div class="grid-2">
+    <section class="card">
+      <div class="card-header"><span class="card-title">Subtype Distribution</span><span class="card-note">all centers</span></div>
+      <div id="dist" class="plot"></div>
+    </section>
+    <section class="card">
+      <div class="card-header"><span class="card-title">Calls by Center</span><span class="card-note">number of samples</span></div>
+      <div id="bars" class="plot"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-header"><span class="card-title">Subtype Mix by Center</span><span class="card-note">percent of each center's samples</span></div>
+    <div id="mix" class="plot"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-header">
+      <span class="card-title">Subtype Counts by Center</span>
+      <button class="btn btn-outline btn-sm" id="dl-pivot" type="button">Download TSV ↓</button>
+    </div>
+    <div class="table-wrap"><table class="data" id="pivot"></table></div>
+    <p class="note" style="padding:0 28px 20px">Subtype is the MD-ALL gene-expression call where PhenoGraph and SVM agree.
+      “Needs review”: the two methods disagree. MD-ALL's “Ph” group includes Ph-positive and Ph-like cases.</p>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const SPECIAL = { 'Needs review': '#c47d0e', 'Unclassified': '#a0aec0', 'Not classified': '#e2e8f0' };
+const label = s => s.gep_call || (s.agreement === 'discordant' ? 'Needs review' : s.agreement === 'unclassified' ? 'Unclassified' : 'Not classified');
+const col = k => SPECIAL[k] || colorOf(k);
+let PIVOT = null;
+
+function tiles(samples, centers) {
+  const n = f => samples.filter(f).length;
+  const review = n(s => s.agreement === 'discordant');
+  $('tiles').innerHTML = [
+    [centers.length, 'Centers', ''], [samples.length, 'Samples', ''],
+    [n(s => s.status === 'classified'), 'Classified', ''],
+    [n(s => s.agreement === 'concordant'), 'Concordant calls', ''],
+    [review, 'Need review', review ? 'warn' : ''],
+    [n(s => s.status !== 'classified'), 'Awaiting MD-ALL', ''],
+  ].map(([v, l, c]) => `<div class="tile ${c}"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+}
+
+function centerTable(samples, centers) {
+  const ids = centers.map(c => c.id).sort();
+  const row = (name, rs, last, link) => {
+    const n = f => rs.filter(f).length;
+    return `<tr ${link ? `data-href="${link}"` : 'style="cursor:default;font-weight:500"'}>
+      <td class="mono">${esc(name)}</td><td class="num mono">${rs.length}</td>
+      <td class="num mono">${n(s => s.status === 'classified')}</td>
+      <td class="num mono">${n(s => s.agreement === 'concordant')}</td>
+      <td class="num mono">${n(s => s.agreement === 'discordant')}</td>
+      <td class="num mono">${n(s => s.agreement === 'unclassified')}</td>
+      <td class="num mono">${n(s => s.status !== 'classified')}</td>
+      <td class="muted">${fmtDate(last)}</td></tr>`;
+  };
+  const lastOf = rs => rs.map(s => s.classified_at).filter(Boolean).sort().pop();
+  $('center-table').innerHTML = `<thead><tr><th>Center</th><th class="num">Samples</th><th class="num">Classified</th>
+      <th class="num">Concordant</th><th class="num">Need review</th><th class="num">Unclassified</th>
+      <th class="num">Awaiting MD-ALL</th><th>Last classified</th></tr></thead><tbody>` +
+    ids.map(id => { const rs = samples.filter(s => s.center === id); return row(id, rs, lastOf(rs), `/?center=${encodeURIComponent(id)}`); }).join('') +
+    (ids.length > 1 ? row('All centers', samples, lastOf(samples), null) : '') + '</tbody>';
+}
+
+function charts(samples, centers) {
+  const ids = centers.map(c => c.id).sort();
+  const counts = {};
+  samples.forEach(s => { const k = label(s); (counts[k] ||= {})[s.center] = (counts[k][s.center] || 0) + 1; });
+  const total = k => Object.values(counts[k]).reduce((a, b) => a + b, 0);
+  const keys = Object.keys(counts).sort((a, b) => total(b) - total(a) || a.localeCompare(b));
+  const narrow = window.innerWidth < 720;
+  const whole = n => (n <= 10 ? { dtick: 1, tickformat: 'd' } : { tickformat: 'd' });   // counts are whole samples
+  const perCenterMax = Math.max(...ids.map(c => samples.filter(s => s.center === c).length));
+
+  // Overall distribution (horizontal, largest on top)
+  const dk = keys.slice().reverse();
+  Plotly.react('dist', [{
+    type: 'bar', orientation: 'h', y: dk, x: dk.map(total), marker: { color: dk.map(col), line: { color: '#fff', width: 1 } },
+    text: dk.map(k => `${total(k)} (${(100 * total(k) / samples.length).toFixed(1)}%)`), textposition: 'outside', cliponaxis: false,
+    hovertemplate: '%{y}: %{x} samples<extra></extra>',
+  }], plotLayout({
+    height: Math.max(360, 34 * dk.length + 80), margin: { l: 140, r: 90, t: 16, b: 50 }, showlegend: false,
+    xaxis: { ...plotLayout().xaxis, ...whole(Math.max(...keys.map(total))), title: { text: 'Samples', font: { color: '#0e7e6e' } } }, yaxis: { ...plotLayout().yaxis, automargin: true },
+  }), plotConfig);
+
+  // Counts by center (stacked)
+  Plotly.react('bars', keys.map(k => ({
+    type: 'bar', orientation: 'h', name: k, y: ids, x: ids.map(c => counts[k][c] || 0),
+    marker: { color: col(k), line: { color: '#fff', width: 1 } }, hovertemplate: `%{y}: %{x} ${esc(k)}<extra></extra>`,
+  })), plotLayout({
+    barmode: 'stack', bargap: 0.35, height: Math.max(360, 60 * ids.length + 120), margin: { l: 110, r: 16, t: 16, b: 50 },
+    xaxis: { ...plotLayout().xaxis, ...whole(perCenterMax), title: { text: 'Samples', font: { color: '#0e7e6e' } } }, yaxis: { ...plotLayout().yaxis, automargin: true },
+    legend: { font: { size: 12 }, orientation: narrow ? 'h' : 'v' },
+  }), plotConfig);
+
+  // Percent mix by center (100% stacked columns)
+  const perCenter = Object.fromEntries(ids.map(c => [c, samples.filter(s => s.center === c).length]));
+  Plotly.react('mix', keys.map(k => ({
+    type: 'bar', name: k, x: ids, y: ids.map(c => perCenter[c] ? 100 * (counts[k][c] || 0) / perCenter[c] : 0),
+    customdata: ids.map(c => counts[k][c] || 0), marker: { color: col(k), line: { color: '#fff', width: 1 } },
+    hovertemplate: `%{x} · ${esc(k)}: %{y:.1f}% (%{customdata} samples)<extra></extra>`,
+  })), plotLayout({
+    barmode: 'stack', bargap: 0.4, height: 460, margin: { l: 60, r: 16, t: 16, b: 60 },
+    yaxis: { ...plotLayout().yaxis, title: { text: '% of center samples', font: { color: '#0e7e6e' } }, range: [0, 100], ticksuffix: '%' },
+    xaxis: { ...plotLayout().xaxis, tickfont: { color: '#4a5568' }, automargin: true },
+    legend: { font: { size: 12 }, orientation: narrow ? 'h' : 'v' },
+  }), plotConfig);
+
+  // Pivot table: subtypes x centers
+  PIVOT = { ids, keys, counts, total };
+  const head = `<thead><tr><th>Subtype</th>${ids.map(c => `<th class="num">${esc(c)}</th>`).join('')}<th class="num">Total</th><th class="num">%</th></tr></thead>`;
+  const body = keys.map(k => `<tr style="cursor:default"><td><span class="swatch" style="background:${col(k)}"></span>${esc(k)}</td>
+      ${ids.map(c => `<td class="num mono">${counts[k][c] || ''}</td>`).join('')}
+      <td class="num mono"><strong>${total(k)}</strong></td><td class="num mono dim">${(100 * total(k) / samples.length).toFixed(1)}</td></tr>`).join('');
+  const foot = `<tr style="cursor:default;font-weight:500"><td>Total</td>${ids.map(c => `<td class="num mono">${perCenter[c]}</td>`).join('')}
+      <td class="num mono">${samples.length}</td><td class="num mono dim">100.0</td></tr>`;
+  $('pivot').innerHTML = head + '<tbody>' + body + foot + '</tbody>';
+}
+
+$('dl-pivot').addEventListener('click', () => {
+  if (!PIVOT) return;
+  const { ids, keys, counts, total } = PIVOT;
+  const lines = [['subtype', ...ids, 'total'].join('\t'), ...keys.map(k => [k, ...ids.map(c => counts[k][c] || 0), total(k)].join('\t'))];
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/tab-separated-values' })),
+    download: 'cog-ball-subtype-counts-by-center.tsv',
+  });
+  a.click(); URL.revokeObjectURL(a.href);
+});
+document.getElementById('center-table').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-href]'); if (tr) location.href = tr.dataset.href;
+});
+
+async function load() {
+  try {
+    const d = await getJson('/api/summary');
+    setSubtypes(d.subtypes);
+    $('meta-version').textContent = `Pipeline ${d.version}`;
+    $('meta-scan').textContent = `Results scanned ${fmtDate(d.scanned_at)}`;
+    if (!d.samples.length) { setStatus('No results synced yet.', 'idle'); return; }
+    tiles(d.samples, d.centers);
+    centerTable(d.samples, d.centers);
+    charts(d.samples, d.centers);
+    $('status').style.display = 'none';
+  } catch (err) {
+    setStatus(`Could not load results: ${err.message}`, 'error');
+  }
+}
+load();
+</script>
+</body>
+</html>

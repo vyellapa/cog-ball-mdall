@@ -1,0 +1,36 @@
+# COG B-ALL MD-ALL — site settings
+#
+# Each site copies this file once and fills it in:
+#     cp site.conf.example site.conf
+# The bash scripts (bin/) and the Nextflow pipelines read site.conf from the
+# repository folder (or the file named by COG_BALL_SITE_CONF), so the center and the
+# paths never have to be typed per run. Anything given on the command line wins.
+#
+# Format: KEY=VALUE, one per line; '#' starts a comment. No spaces around '='.
+
+# Your center code, exactly as registered in centers.tsv (CHOP, NCH or CHLA).
+# Results are written to <OUTDIR>/<CENTER>/ and shown under this code on the website.
+CENTER=CHOP
+
+# Reference bundle (from bin/cog-ball-reference.sh or pipelines/00-reference)
+REFS=/data/cog-ball/refs
+
+# Folder with cog-ball-{counts,mdall,web}_<version>.sif (containers/make_sif.sh)
+SIF_DIR=/data/cog-ball/sif
+
+# Where results are written (results go to OUTDIR/CENTER/<sample>/)
+OUTDIR=/data/cog-ball/results
+
+# CPU threads per sample
+THREADS=8
+
+# Ready-made reference bundle for  bin/cog-ball-reference.sh --download
+# COG fills in the record; each center pastes the access-link token COG sends them.
+ZENODO_RECORD=
+ZENODO_LINK_TOKEN=
+# (alternative source: a Hugging Face dataset id)
+HF_REPO=
+
+# Shared results space for bin/sync_results.sh (user@host:/path or a mounted path),
+# without the center folder. Leave empty if results are copied another way.
+HUB=

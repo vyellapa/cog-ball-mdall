@@ -1,0 +1,14 @@
+# Results website on the hub server (Docker). For Singularity/Apptainer see README.
+#   RESULTS_ROOT=/srv/cog-ball/results APP_PASSWORD=... docker compose up -d
+services:
+  web:
+    image: ${REGISTRY:-cog-ball}/web:${COG_BALL_VERSION:-0.1.0}
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ${RESULTS_ROOT:?Set RESULTS_ROOT to the synced results directory}:/data/results:ro
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:-}
+      APP_USER: ${APP_USER:-admin}
+      RESCAN_SECONDS: ${RESCAN_SECONDS:-60}
+    restart: unless-stopped

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Results Portal | B-ALL MD-ALL Classifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+<script src="/common.js"></script>
+</head>
+<body>
+<main class="page-shell">
+  <div class="topbar">
+    <div class="topbar-copy">
+      <span class="topbar-title"><a href="/">B-ALL MD-ALL Classifier</a></span>
+      <span class="topbar-subtitle">COG working group</span>
+    </div>
+  </div>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">Results Portal</div>
+      <p class="hero-sub">MD-ALL gene-expression subtype calls from every participating center, synced from each site's pipeline runs.</p>
+      <span class="run-meta" id="meta-version">—</span><span class="run-meta" id="meta-scan">—</span>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-primary" href="/stats.html">Cohort Statistics ↗</a>
+      <a class="btn btn-outline" href="/umap.html">Open Cohort UMAP ↗</a>
+      <a class="btn btn-outline" id="export" href="/api/export.tsv">Export TSV ↓</a>
+    </div>
+  </section>
+
+
+  <section class="card">
+    <div class="card-header">
+      <span class="card-title" id="table-title">Samples</span>
+      <div class="controls">
+        <select id="f-center" aria-label="Center"><option value="">All centers</option></select>
+        <select id="f-call" aria-label="Call"><option value="">All calls</option></select>
+        <select id="f-agree" aria-label="Agreement">
+          <option value="">Any agreement</option>
+          <option value="concordant">Concordant</option>
+          <option value="discordant">Needs review</option>
+          <option value="unclassified">Unclassified</option>
+          <option value="none">Not classified yet</option>
+        </select>
+        <input type="search" id="f-q" placeholder="Search sample…" aria-label="Search sample">
+      </div>
+    </div>
+    <div class="status idle" id="status">Loading results…</div>
+    <div class="table-wrap">
+      <table class="data" id="tbl">
+        <thead><tr>
+          <th data-k="center">Center</th>
+          <th data-k="sample">Sample</th>
+          <th data-k="call">MD-ALL Call</th>
+          <th data-k="agreement">Agreement</th>
+          <th data-k="pg">PhenoGraph</th>
+          <th data-k="svm">SVM</th>
+          <th data-k="date">Classified</th>
+          <th data-k="none">Analysis</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="empty" id="empty" hidden>No samples match these filters.</div>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+let DATA = null, firstLoad = true, sortKey = 'center', sortAsc = true;
+const $ = id => document.getElementById(id);
+const sortVal = {
+  center: s => s.center, sample: s => s.sample, call: s => callText(s), agreement: s => s.agreement || 'zz',
+  pg: s => s.phenograph?.score ?? -1, svm: s => s.svm?.score ?? -1,
+  date: s => s.classified_at || '', none: s => s.center,
+};
+
+function filtered() {
+  const c = $('f-center').value, call = $('f-call').value, a = $('f-agree').value;
+  const q = $('f-q').value.trim().toLowerCase();
+  return DATA.samples.filter(s =>
+    (!c || s.center === c) && (!call || s.gep_call === call) &&
+    (!a || (a === 'none' ? !s.agreement : s.agreement === a)) &&
+    (!q || s.sample.toLowerCase().includes(q)));
+}
+
+function renderTable() {
+  const rows = filtered().sort((a, b) => {
+    const x = sortVal[sortKey](a), y = sortVal[sortKey](b);
+    return (x < y ? -1 : x > y ? 1 : 0) * (sortAsc ? 1 : -1);
+  });
+  document.querySelectorAll('#tbl th').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.k === sortKey);
+    th.classList.toggle('asc', th.dataset.k === sortKey && sortAsc);
+  });
+  $('table-title').textContent = `Samples (${rows.length})`;
+  $('empty').hidden = rows.length > 0;
+  $('tbl').querySelector('tbody').innerHTML = rows.map(s => {
+    const p = sampleParams(s.center, s.sample);
+    const actions = s.status === 'classified'
+      ? `<a class="btn btn-outline btn-sm" href="/gene-search.html?${p}">Gene Search</a> <a class="btn btn-outline btn-sm" href="/umap.html?${p}">UMAP</a>` : '';
+    return `<tr data-href="/sample.html?${p}">
+      <td class="mono">${esc(s.center)}</td>
+      <td class="mono"><a href="/sample.html?${p}">${esc(s.sample)}</a></td>
+      <td>${s.gep_call ? swatch(s.gep_call) + esc(s.gep_call) : `<span class="muted">${esc(callText(s))}</span>`}</td>
+      <td>${agreementPill(s.agreement)}</td>
+      <td>${s.phenograph ? `${esc(s.phenograph.call)} <span class="dim mono">${fmtNum(s.phenograph.score)}</span>` : '—'}</td>
+      <td>${s.svm ? `${esc(s.svm.call)} <span class="dim mono">${fmtNum(s.svm.score)}</span>` : '—'}</td>
+      <td class="muted">${fmtDate(s.classified_at)}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+  const c = $('f-center').value;
+  $('export').href = '/api/export.tsv' + (c ? `?center=${encodeURIComponent(c)}` : '');
+}
+
+const renderAll = () => renderTable();
+
+async function load() {
+  try {
+    DATA = await getJson('/api/summary');
+    setSubtypes(DATA.subtypes);
+    $('meta-version').textContent = `Pipeline ${DATA.version}`;
+    $('meta-scan').textContent = `Results scanned ${fmtDate(DATA.scanned_at)}`;
+    const keep = (sel, values) => { const cur = sel.value; sel.length = 1; values.forEach(v => sel.add(new Option(v, v))); sel.value = values.includes(cur) ? cur : ''; };
+    keep($('f-center'), DATA.centers.map(c => c.id).sort());
+    keep($('f-call'), [...new Set(DATA.samples.map(s => s.gep_call).filter(Boolean))].sort());
+    if (firstLoad && qs.get('center')) $('f-center').value = qs.get('center');   // from the statistics page
+    firstLoad = false;
+    renderAll();
+    setStatus(`${DATA.samples.length} samples from ${DATA.centers.length} centers` +
+      (DATA.scan_errors ? ` · ${DATA.scan_errors} result file(s) could not be read` : ''), DATA.scan_errors ? 'error' : 'loaded');
+  } catch (err) {
+    setStatus(`Could not load results: ${err.message}`, 'error');
+  }
+}
+
+document.querySelectorAll('#tbl th').forEach(th => th.addEventListener('click', () => {
+  if (th.dataset.k === 'none') return;
+  sortAsc = sortKey === th.dataset.k ? !sortAsc : true; sortKey = th.dataset.k; renderTable();
+}));
+$('tbl').querySelector('tbody').addEventListener('click', e => {
+  const tr = e.target.closest('tr'); if (tr && !e.target.closest('a')) location.href = tr.dataset.href;
+});
+['f-center', 'f-call', 'f-agree'].forEach(id => $(id).addEventListener('change', renderAll));
+$('f-q').addEventListener('input', renderAll);
+
+load();
+setInterval(load, 120000);
+</script>
+</body>
+</html>

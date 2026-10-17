@@ -1,0 +1,8 @@
+sample_id	phenoGraph_pred	phenoGraph_predScore	phenoGraph_predLabel	svm_pred	svm_predScore	svm_predLabel
+COH000246_D1	KMT2A	1	KMT2A,11(1)	KMT2A	1	KMT2A,11(1)
+COH000893_D1	Ph	1	Ph,11(1)	Ph	1	Ph,11(1)
+COH000353_D1	MEF2D	1	MEF2D,11(1)	MEF2D	1	MEF2D,11(1)
+COH000082_D1	PAX5alt	0.91	PAX5alt,10(0.91)|Ph,1(0.09)	PAX5alt	0.91	PAX5alt,10(0.91)|Ph,1(0.09)
+COH000757_D1	PAX5 P80R	1	PAX5 P80R,11(1)	PAX5 P80R	1	PAX5 P80R,11(1)
+PM_47.Ph	Ph	1	Ph,11(1)	Ph	1	Ph,11(1)
+RCH_39.PAX5alt	PAX5alt	1	PAX5alt,11(1)	PAX5alt	1	PAX5alt,11(1)

@@ -1,0 +1,11 @@
+This bundle is derived entirely from public reference data and contains no patient data.
+
+- GRCh38 genome assembly (GCA_000001405.15, no-alt analysis set + hs38d1) from NCBI.
+  NCBI places no restrictions on the use or distribution of GenBank/RefSeq sequence data.
+- Ensembl release 102 gene annotation. Ensembl data are made available without
+  restriction on use (https://www.ensembl.org/info/about/legal/disclaimer.html).
+- genes.collapsed.gtf was produced with collapse_annotation.py from
+  broadinstitute/gtex-pipeline (BSD-3-Clause).
+- The STAR index was generated with STAR 2.7.11b (MIT licence).
+
+Provided as-is for research use, without warranty.

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gene Search | B-ALL MD-ALL Classifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+<script src="/vendor/plotly.min.js"></script>
+<script src="/common.js"></script>
+</head>
+<body>
+<main class="page-shell">
+  <div class="topbar">
+    <div class="topbar-copy">
+      <span class="topbar-title"><a href="/">B-ALL MD-ALL Classifier</a></span>
+      <span class="topbar-subtitle">COG working group</span>
+    </div>
+    <a class="btn btn-outline" id="back-link" href="/">← Back to Sample</a>
+  </div>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">Gene Search</div>
+      <p class="hero-sub">Compare your sample against the MD-ALL B-ALL reference cohort (1,821 samples) for any gene.</p>
+      <span class="run-meta" id="meta-sample">—</span><span class="run-meta" id="meta-call">—</span>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-outline" id="umap-link" href="#">Open UMAP ↗</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-header">
+      <span class="card-title">Expression by Subtype</span>
+      <div class="search-row">
+        <div class="gene-input-wrap">
+          <input type="text" id="gene-input" list="gene-list" placeholder="CRLF2, CDX2, PAX5…" autocomplete="off" spellcheck="false" />
+          <datalist id="gene-list"></datalist>
+        </div>
+        <button class="btn btn-primary" id="search-btn">Search Gene</button>
+      </div>
+    </div>
+
+    <div class="gene-hints">
+      <span class="hint-label">Quick search:</span>
+      <span class="chip" data-gene="CRLF2">CRLF2</span>
+      <span class="chip" data-gene="CDX2">CDX2</span>
+      <span class="chip" data-gene="NUTM1">NUTM1</span>
+      <span class="chip" data-gene="HLF">HLF</span>
+      <span class="chip" data-gene="DUX4">DUX4</span>
+      <span class="chip" data-gene="PAX5">PAX5</span>
+      <span class="chip" data-gene="IKZF1">IKZF1</span>
+      <span class="chip" data-gene="ETV6">ETV6</span>
+      <span class="chip" data-gene="BCR">BCR</span>
+      <span class="chip" data-gene="ABL1">ABL1</span>
+    </div>
+
+    <div id="status" class="status idle">Enter a gene symbol or Ensembl ID.</div>
+    <div id="overall-percentile" class="overall-percentile"></div>
+    <div id="plotly-chart" style="display:none"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const center = qs.get('center') || '', sample = qs.get('sample') || '';
+const base = `${encodeURIComponent(center)}/${encodeURIComponent(sample)}`;
+const p = sampleParams(center, sample);
+
+$('meta-sample').textContent = sample ? `Sample: ${sample} · ${center}` : 'Sample missing from URL';
+$('back-link').href = sample ? `/sample.html?${p}` : '/';
+$('umap-link').href = sample ? `/umap.html?${p}` : '/umap.html';
+$('gene-input').value = qs.get('gene') || '';
+
+function percentileRank(values, v) {
+  const clean = values.filter(Number.isFinite);
+  if (!clean.length || !Number.isFinite(v)) return null;
+  return clean.filter(x => x <= v).length / clean.length * 100;
+}
+const median = arr => { const s = arr.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+
+function renderOverall(pct, value, gene) {
+  const el = $('overall-percentile');
+  if (!Number.isFinite(pct)) { el.className = 'overall-percentile'; el.innerHTML = ''; return; }
+  el.className = 'overall-percentile active';
+  el.innerHTML = `<strong>Overall percentile:</strong> ${pct.toFixed(1)}th across the full reference cohort for <strong>${esc(gene)}</strong> at expression ${value.toFixed(2)}.`;
+}
+
+async function searchGene() {
+  const gene = $('gene-input').value.trim();
+  if (!sample) return setStatus('Sample is missing from the page URL.', 'error');
+  if (!gene) return setStatus('Enter a gene name first.', 'error');
+  setStatus(`Loading ${gene}…`);
+  $('plotly-chart').style.display = 'none';
+  renderOverall(null);
+
+  try {
+    const data = await getJson(`/api/gene/${base}/${encodeURIComponent(gene)}`);
+    setSubtypes(data.subtypes);
+    const label = data.gene_name || data.gene_id;
+    // null/undefined means the gene is not in this sample's counts. Check before any
+    // conversion: Number(null) is 0, which would plot a fake zero.
+    const hasValue = typeof data.sample_value === 'number' && Number.isFinite(data.sample_value);
+    const value = hasValue ? data.sample_value : null;
+
+    const boxes = Object.entries(data.reference).map(([subtype, vals]) => {
+      const color = colorOf(subtype);
+      return {
+        y: vals, type: 'box', name: subtype,
+        boxpoints: 'all', jitter: 0.5, pointpos: 0, quartilemethod: 'linear',
+        fillcolor: `${color}22`, line: { color, width: 1.7 }, whiskerwidth: 0.7,
+        marker: { size: 5.5, opacity: 0.5, color, line: { color: 'rgba(13,17,23,0.8)', width: 0.4 } },
+        hoverinfo: 'skip', hovertemplate: null,
+      };
+    }).sort((a, b) => median(a.y) - median(b.y));
+
+    const ordered = boxes.map(t => t.name);
+    const pctRows = hasValue ? ordered.map(st => ({ st, n: data.reference[st].length, pct: percentileRank(data.reference[st], value) })) : [];
+    const query = !hasValue ? null : {
+      x: ordered, y: ordered.map(() => value),
+      customdata: pctRows.map(r => [r.st, r.pct, r.n]),
+      mode: 'markers', type: 'scatter', name: 'Query sample',
+      marker: { size: 11, color: '#c0392b', symbol: 'diamond', line: { color: '#fff', width: 1.3 } },
+      hoverlabel: { bgcolor: '#ffffff', bordercolor: '#c0392b', font: { color: '#1a202c' } },
+      hovertemplate: `<b>${esc(sample)}</b><br>Subtype: %{customdata[0]}<br>Expression: %{y:.2f}` +
+                     '<br>Percentile: %{customdata[1]:.1f}th<br>Reference N: %{customdata[2]}<extra></extra>',
+    };
+
+    const all = Object.values(data.reference).flat().filter(Number.isFinite);
+    const yMin = Math.min(...all, ...(hasValue ? [value] : [])), yMax = Math.max(...all, ...(hasValue ? [value] : []));
+    const yPad = Math.max((yMax - yMin) * 0.05, 0.2);
+    const el = $('plotly-chart');
+    el.style.display = 'block';
+    const narrow = window.innerWidth < 720;
+
+    Plotly.newPlot(el, hasValue ? [...boxes, query] : boxes, plotLayout({
+      height: narrow ? 620 : 900,
+      font: { family: PLOT_FONT, color: '#4a5568', size: narrow ? 12 : 16 },
+      title: { text: `<b>${esc(label)}</b> expression across reference subtypes`,
+               font: { family: "'Syne', sans-serif", color: '#1a202c', size: narrow ? 18 : 26 }, x: 0.02, xanchor: 'left' },
+      yaxis: { ...plotLayout().yaxis, title: { text: 'VST Expression', font: { color: '#0e7e6e', size: 17 } }, range: [yMin - yPad, yMax + yPad] },
+      xaxis: { ...plotLayout().xaxis, tickangle: 45, automargin: true, tickfont: { color: '#4a5568' } },
+      showlegend: false, boxgap: 0.2, hovermode: 'closest',
+      shapes: hasValue ? [{ type: 'line', x0: -0.5, x1: boxes.length - 0.5, y0: value, y1: value, line: { color: '#c0392b', width: 2, dash: 'dot' } }] : [],
+      annotations: [{
+        x: 0.01, y: 1.045, xref: 'paper', yref: 'paper', showarrow: false,
+        text: hasValue ? `Query sample: <b>${value.toFixed(2)}</b>` : 'Query sample: <b>not measured</b>', bgcolor: 'rgba(192,57,43,0.08)',
+        bordercolor: 'rgba(192,57,43,0.22)', borderwidth: 1, borderpad: 6, font: { color: '#c0392b', size: 16, family: PLOT_FONT },
+      }],
+      margin: { b: 130, t: 90, l: 70, r: 24 },
+    }), plotConfig);
+
+    if (hasValue) {
+      renderOverall(percentileRank(all, value), value, label);
+      setStatus(`Showing ${label} (${data.gene_id}) for sample ${sample}.`, 'loaded');
+    } else {
+      setStatus(`${label} (${data.gene_id}) is not measured in sample ${sample}; showing the reference cohort only.`, 'error');
+    }
+    history.replaceState(null, '', `/gene-search.html?${p}&gene=${encodeURIComponent(gene)}`);
+  } catch (err) {
+    setStatus(err.message, 'error');
+  }
+}
+
+document.querySelectorAll('.chip[data-gene]').forEach(chip => chip.addEventListener('click', () => {
+  $('gene-input').value = chip.dataset.gene; searchGene();
+}));
+$('search-btn').addEventListener('click', searchGene);
+$('gene-input').addEventListener('keydown', e => { if (e.key === 'Enter') searchGene(); });
+let t = null;
+$('gene-input').addEventListener('input', e => {
+  clearTimeout(t);
+  t = setTimeout(async () => {
+    const list = await getJson(`/api/genes?q=${encodeURIComponent(e.target.value)}`).catch(() => []);
+    $('gene-list').innerHTML = list.map(g => `<option value="${esc(g.name || g.id)}">${esc(g.id)}</option>`).join('');
+  }, 200);
+});
+
+if (sample) {
+  getJson(`/api/sample/${base}`).then(d => {
+    const c = d.mdall?.call;
+    $('meta-call').textContent = c ? `MD-ALL: ${c.gep_call || 'needs review'}` : 'Not classified';
+  }).catch(() => { $('meta-call').textContent = 'Sample not found'; });
+  if ($('gene-input').value) searchGene();
+}
+</script>
+</body>
+</html>
