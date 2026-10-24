@@ -4,7 +4,7 @@
 # Run once per site.
 #
 # Usage:
-#   bin/cog-ball-reference.sh --download   # fetch the ready-made bundle from Hugging Face (recommended)
+#   bin/cog-ball-reference.sh --download   # fetch the ready-made COG bundle from Zenodo (recommended)
 #   bin/cog-ball-reference.sh              # build it here instead (with site.conf: REFS, SIF_DIR, THREADS)
 #   bin/cog-ball-reference.sh --outdir /shared/cog-ball/refs [--sif-dir DIR | --docker] [options]
 #

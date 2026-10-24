@@ -276,6 +276,7 @@ pipelines/01-counts/            FASTQ → counts + QC
 pipelines/02-classify/          counts → MD-ALL
 bin/cog-ball-reference.sh       reference bundle without Nextflow
 bin/cog-ball-run.sh             one sample FASTQ → MD-ALL without Nextflow
+bin/cog-ball-summary.sh         table of every finished sample's MD-ALL call
 bin/sync_results.sh             center → shared space
 web/                            results website
 test/                           regression data and checks
