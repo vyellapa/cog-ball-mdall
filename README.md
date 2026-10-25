@@ -107,7 +107,7 @@ GitHub, then accept it. Then:
 cd $COG
 git clone https://github.com/vyellapa/cog-ball-mdall.git
 cd cog-ball-mdall
-git checkout v0.1.0                     # the version every center runs
+git checkout v0.1.1                     # the version every center runs
 ```
 
 * When git asks for a **Username**, type your GitHub username. When it asks for a
@@ -116,9 +116,9 @@ git checkout v0.1.0                     # the version every center runs
   picture → **Settings** → **Developer settings** → **Personal access tokens** →
   **Tokens (classic)** → **Generate new token (classic)**, tick **repo**, then
   **Generate**, and copy the token.
-* `git checkout v0.1.0` prints a note about a *detached HEAD*. That is normal.
+* `git checkout v0.1.1` prints a note about a *detached HEAD*. That is normal.
 * **No git on the server?** On the GitHub page, open the branch menu (it says
-  **main**), choose **Tags** → **v0.1.0**, then click **Code** → **Download ZIP**. Copy
+  **main**), choose **Tags** → **v0.1.1**, then click **Code** → **Download ZIP**. Copy
   the ZIP to `$COG` on the server and run
   `cd $COG && unzip cog-ball-mdall-*.zip && mv cog-ball-mdall-*/ cog-ball-mdall`.
 
@@ -139,9 +139,9 @@ containers/make_sif.sh --pull $COG/sif
 This takes 15–30 minutes. When it finishes, it lists three files:
 
 ```
-cog-ball-counts_0.1.0.sif
-cog-ball-mdall_0.1.0.sif
-cog-ball-web_0.1.0.sif
+cog-ball-counts_0.1.1.sif
+cog-ball-mdall_0.1.1.sif
+cog-ball-web_0.1.1.sif
 ```
 
 You can then delete the temporary folder: `rm -rf $COG/tmp`.
@@ -499,7 +499,7 @@ results.
 ```bash
 APPTAINERENV_APP_PASSWORD='choose-a-password' \
 apptainer run --cleanenv --bind /srv/cog-ball/results:/data/results:ro \
-  $COG/sif/cog-ball-web_0.1.0.sif
+  $COG/sif/cog-ball-web_0.1.1.sif
 ```
 
 * It listens on port 3000 (`APPTAINERENV_PORT=3010` to change it). Viewers sign in with
@@ -508,7 +508,7 @@ apptainer run --cleanenv --bind /srv/cog-ball/results:/data/results:ro \
 * To view it from your laptop: `ssh -L 3000:localhost:3000 you@hub-server`, then open
   <http://localhost:3000>.
 * With Docker: `RESULTS_ROOT=/srv/cog-ball/results APP_PASSWORD=... docker compose -f web/docker-compose.yml up -d`
-* Check it: `test/test_web.sh /srv/cog-ball/results --sif $COG/sif/cog-ball-web_0.1.0.sif`
+* Check it: `test/test_web.sh /srv/cog-ball/results --sif $COG/sif/cog-ball-web_0.1.1.sif`
 
 Pages: all samples (filter, search, export), cohort statistics, and for each sample the
 MD-ALL call, QC with gene-body coverage, gene expression against the reference cohort,

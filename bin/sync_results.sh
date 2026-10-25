@@ -25,7 +25,7 @@ for arg in "$@"; do
     *) args+=("$arg") ;;
   esac
 done
-set -- "${args[@]}"
+set -- ${args[@]+"${args[@]}"}   # bash < 4.4 treats an empty array as unset
 if [[ $# -ge 2 && $1 != -* && $2 != -* ]]; then
   src=$1; dest=$2; shift 2
 else

@@ -2,7 +2,7 @@
 #   RESULTS_ROOT=/srv/cog-ball/results APP_PASSWORD=... docker compose up -d
 services:
   web:
-    image: ${REGISTRY:-cog-ball}/web:${COG_BALL_VERSION:-0.1.0}
+    image: ${REGISTRY:-cog-ball}/web:${COG_BALL_VERSION:-0.1.1}
     ports:
       - "${PORT:-3000}:3000"
     volumes:
