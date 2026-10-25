@@ -90,7 +90,9 @@ function renderOverall(pct, value, gene) {
   el.innerHTML = `<strong>Overall percentile:</strong> ${pct.toFixed(1)}th across the full reference cohort for <strong>${esc(gene)}</strong> at expression ${value.toFixed(2)}.`;
 }
 
+let searchRequest = 0;
 async function searchGene() {
+  const request = ++searchRequest;
   const gene = $('gene-input').value.trim();
   if (!sample) return setStatus('Sample is missing from the page URL.', 'error');
   if (!gene) return setStatus('Enter a gene name first.', 'error');
@@ -100,6 +102,7 @@ async function searchGene() {
 
   try {
     const data = await getJson(`/api/gene/${base}/${encodeURIComponent(gene)}`);
+    if (request !== searchRequest) return;
     setSubtypes(data.subtypes);
     const label = data.gene_name || data.gene_id;
     // null/undefined means the gene is not in this sample's counts. Check before any
@@ -162,6 +165,7 @@ async function searchGene() {
     }
     history.replaceState(null, '', `/gene-search.html?${p}&gene=${encodeURIComponent(gene)}`);
   } catch (err) {
+    if (request !== searchRequest) return;
     setStatus(err.message, 'error');
   }
 }

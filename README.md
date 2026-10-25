@@ -336,6 +336,9 @@ On a Slurm cluster, wrap the same command in `sbatch` as in Step 6
 * **Single-end** (only R1 files)? Leave out `--r2`.
 * **Ran it again by mistake?** The script notices when a sample's counts already
   exist for the exact same FASTQ files and skips the slow alignment.
+  If you add `--keep-bam` and the BAM or its index is missing, it repeats alignment
+  and counting to retain them. A rerun clears the previous classification; a failed
+  run will not leave the old call displayed as current.
 
 ### Several samples
 
@@ -439,6 +442,9 @@ bin/sync_results.sh                # copies
 * Only results, QC and provenance files are sent — never FASTQ or BAM files.
 * The hub keeps an exact copy of your results folder. To remove or correct a sample,
   delete it (`rm -rf $COG/results/<CENTER>/<sample>`) or run it again, then sync.
+  After deleting your center's last sample, preview with
+  `bin/sync_results.sh --allow-empty --dry-run`, then run
+  `bin/sync_results.sh --allow-empty` to remove its results from the hub.
 * The website shows the changes within a minute.
 
 ---

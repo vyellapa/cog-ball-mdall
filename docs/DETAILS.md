@@ -173,6 +173,10 @@ path-traversal attempts.
 
 ## Validation
 
+* **Local regression checks:** `python3 -m unittest discover -s test -p 'test_cli.py' -v`
+  checks standalone rerun failures, BAM retention and result withdrawal (uses a mock
+  container executable and local rsync). `node --test test/gene_search_checks.js`
+  checks overlapping gene searches. Neither needs containers or reference downloads.
 * **Classifier:** `test/expected_mdall.tsv` holds the calls upstream MD-ALL's own
   functions give for the seven count files bundled with MD-ALL
   (`test/make_expected_vanilla.R`). Step 2 must reproduce them exactly:

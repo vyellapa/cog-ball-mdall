@@ -29,7 +29,8 @@
 #   --site-conf FILE   settings file [<repo>/site.conf or $COG_BALL_SITE_CONF]
 #   --threads N        CPU threads [8]
 #   --work DIR         scratch for BAM/intermediates [<outdir>/<center>/<sample>/work]
-#   --keep-bam         copy the sorted BAM to <outdir>/<center>/<sample>/bam/
+#   --keep-bam         retain the sorted BAM in <outdir>/<center>/<sample>/bam/
+#                      (redo alignment/counting if cached counts have no retained BAM)
 #   --keep-work        do not delete the scratch directory
 #   --force            redo counting even if counts from identical inputs exist
 #                      (counts made from different FASTQs, reference or image are
@@ -179,13 +180,31 @@ fingerprint=$(
   if [[ -n $r2 ]]; then IFS=',' read -r -a fq_r2 <<< "$r2"; for f in "${fq_r2[@]}"; do echo "r2 $f $(fsig "$f")"; done; fi
 )
 fp_file=$counts_dir/.$sample.inputs
+reuse_counts=0
 if [[ -s $counts && $force == 0 && -f $fp_file && $(cat "$fp_file") == "$fingerprint" ]]; then
+  reuse_counts=1
+  if [[ $keep_bam == 1 && ( ! -s $sdir/bam/$sample.bam || ! -s $sdir/bam/$sample.bam.bai ) ]]; then
+    echo "== --keep-bam requested but the retained BAM/index is missing; aligning and counting again"
+    reuse_counts=0
+  fi
+fi
+
+# Once a rerun starts, its previous classification must not be shown or synced as
+# current, even if alignment, counting or classification fails. New classifier
+# outputs are staged below so failures cannot publish a partial replacement.
+for ext in mdall.json mdall.tsv predictions.tsv vst.tsv.gz mdall.log; do
+  rm -f "$mdall_dir/$sample.$ext"
+done
+
+if [[ $reuse_counts == 1 ]]; then
   echo "== counts exist for these exact inputs; skipping alignment (use --force to redo)"
 else
   if [[ -s $counts && $force == 0 ]]; then
-    echo "== existing counts were made from different inputs (or have no input record); counting again"
+    echo "== existing counts cannot be reused for this run; counting again"
   fi
   rm -f "$fp_file"
+  # A retained BAM from the previous inputs must not satisfy a later --keep-bam.
+  rm -f "$sdir/bam/$sample.bam" "$sdir/bam/$sample.bam.bai"
   echo "== [1/3] STAR alignment + sort"
   run_in "$img_counts" "$work" cog_align.sh "$sample" "$refs/star_index" "$threads" "$r1" $r2
   echo "== [2/3] htseq-count + DUX4 patch + RNA-SeQC + gene-body coverage"
@@ -201,8 +220,18 @@ fi
 
 # ── 2. MD-ALL (same command as pipelines/02-classify) ────────────────────────
 echo "== [3/3] MD-ALL expression classifier"
-run_in "$img_mdall" "$mdall_dir" mdall_classify.R --counts "$counts" --sample "$sample" --center "$center" \
+classify_work=$(mktemp -d "$mdall_dir/.classify.XXXXXX")
+trap 'rm -rf "$classify_work"' EXIT
+run_in "$img_mdall" "$classify_work" mdall_classify.R --counts "$counts" --sample "$sample" --center "$center" \
     --cores "$threads" --outdir . 2>&1 | tee "$mdall_dir/$sample.mdall.log"
+# Check the complete output set before publishing anything; JSON is published last
+# because its presence tells the website that the sample has been classified.
+for ext in mdall.tsv predictions.tsv vst.tsv.gz mdall.json; do
+  [[ -s $classify_work/$sample.$ext ]] || die "classifier output missing or empty: $sample.$ext"
+done
+for ext in mdall.tsv predictions.tsv vst.tsv.gz mdall.json; do
+  mv "$classify_work/$sample.$ext" "$mdall_dir/$sample.$ext"
+done
 
 if [[ $keep_work == 0 && $work == "$sdir/work" ]]; then rm -rf "$work"; fi
 
